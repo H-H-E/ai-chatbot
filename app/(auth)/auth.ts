@@ -5,6 +5,7 @@ import Credentials from 'next-auth/providers/credentials';
 import { getUser } from '@/lib/db/queries';
 
 import { authConfig } from './auth.config';
+import './types';
 
 interface ExtendedSession extends Session {
   user: User;
@@ -26,7 +27,7 @@ export const {
         // biome-ignore lint: Forbidden non-null assertion.
         const passwordsMatch = await compare(password, users[0].password!);
         if (!passwordsMatch) return null;
-        return users[0] as any;
+        return users[0];
       },
     }),
   ],
@@ -34,21 +35,17 @@ export const {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.role = user.role;
+        token.tokenLimit = user.tokenLimit;
       }
-
       return token;
     },
-    async session({
-      session,
-      token,
-    }: {
-      session: ExtendedSession;
-      token: any;
-    }) {
+    async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.role = token.role as 'user' | 'admin';
+        session.user.tokenLimit = token.tokenLimit as number | undefined;
       }
-
       return session;
     },
   },

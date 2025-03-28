@@ -15,6 +15,8 @@ import {
   message,
   vote,
   type DBMessage,
+  customPrompt,
+  usageStat,
 } from './schema';
 import { ArtifactKind } from '@/components/artifact';
 
@@ -346,6 +348,134 @@ export async function updateChatVisiblityById({
     return await db.update(chat).set({ visibility }).where(eq(chat.id, chatId));
   } catch (error) {
     console.error('Failed to update chat visibility in database');
+    throw error;
+  }
+}
+
+// Admin query functions
+export async function getUsers({
+  page = 1,
+  limit = 10,
+  emailSearch,
+}: {
+  page?: number;
+  limit?: number;
+  emailSearch?: string;
+}) {
+  try {
+    const offset = (page - 1) * limit;
+    let query = db
+      .select({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        tokenLimit: user.tokenLimit,
+      })
+      .from(user);
+
+    if (emailSearch) {
+      query = query.where(eq(user.email, emailSearch));
+    }
+
+    return await query.limit(limit).offset(offset);
+  } catch (error) {
+    console.error('Failed to get users from database');
+    throw error;
+  }
+}
+
+export async function updateUser({
+  userId,
+  role,
+  tokenLimit,
+}: {
+  userId: string;
+  role?: 'user' | 'admin';
+  tokenLimit?: number;
+}) {
+  try {
+    const updateData: Partial<typeof user.$inferInsert> = {};
+    if (role) updateData.role = role;
+    if (tokenLimit !== undefined) updateData.tokenLimit = tokenLimit;
+
+    return await db.update(user).set(updateData).where(eq(user.id, userId));
+  } catch (error) {
+    console.error('Failed to update user in database');
+    throw error;
+  }
+}
+
+export async function getCustomPrompts({
+  userId,
+}: {
+  userId?: string;
+} = {}) {
+  try {
+    let query = db.select().from(customPrompt);
+    if (userId) {
+      query = query.where(eq(customPrompt.userId, userId));
+    }
+    return await query;
+  } catch (error) {
+    console.error('Failed to get custom prompts from database');
+    throw error;
+  }
+}
+
+export async function createCustomPrompt({
+  userId,
+  promptText,
+  name,
+}: {
+  userId: string;
+  promptText: string;
+  name?: string;
+}) {
+  try {
+    return await db.insert(customPrompt).values({
+      userId,
+      promptText,
+      name,
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    console.error('Failed to create custom prompt in database');
+    throw error;
+  }
+}
+
+export async function deleteCustomPrompt(promptId: string) {
+  try {
+    return await db.delete(customPrompt).where(eq(customPrompt.id, promptId));
+  } catch (error) {
+    console.error('Failed to delete custom prompt from database');
+    throw error;
+  }
+}
+
+export async function getUsageStats({
+  startDate,
+  endDate,
+  userId,
+}: {
+  startDate?: Date;
+  endDate?: Date;
+  userId?: string;
+} = {}) {
+  try {
+    let query = db.select().from(usageStat);
+
+    if (startDate || endDate || userId) {
+      const conditions = [];
+      if (startDate) conditions.push(gte(usageStat.timestamp, startDate));
+      if (endDate) conditions.push(gte(endDate, usageStat.timestamp));
+      if (userId) conditions.push(eq(usageStat.userId, userId));
+      query = query.where(and(...conditions));
+    }
+
+    return await query.orderBy(desc(usageStat.timestamp));
+  } catch (error) {
+    console.error('Failed to get usage stats from database');
     throw error;
   }
 }

@@ -9,12 +9,69 @@ import {
   primaryKey,
   foreignKey,
   boolean,
+  integer,
 } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('user', {
+  id: text('id').primaryKey(),
+  name: text('name'),
+  email: text('email').unique(),
+  emailVerified: timestamp('emailVerified', { mode: 'date' }),
+  image: text('image'),
+  isAdmin: boolean('isAdmin').default(false),
+});
+
+export const accounts = pgTable('account', {
+  id: text('id').primaryKey(),
+  userId: text('userId')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  provider: text('provider').notNull(),
+  providerAccountId: text('providerAccountId').notNull(),
+  refresh_token: text('refresh_token'),
+  access_token: text('access_token'),
+  expires_at: integer('expires_at'),
+  token_type: text('token_type'),
+  scope: text('scope'),
+  id_token: text('id_token'),
+  session_state: text('session_state'),
+});
+
+export const sessions = pgTable('session', {
+  id: text('id').primaryKey(),
+  sessionToken: text('sessionToken').notNull().unique(),
+  userId: text('userId')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+});
+
+export const verificationTokens = pgTable('verificationToken', {
+  identifier: text('identifier').notNull(),
+  token: text('token').notNull(),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+});
+
+export const usageStats = pgTable('usageStat', {
+  id: text('id').primaryKey(),
+  userId: text('userId')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  timestamp: timestamp('timestamp', { mode: 'date' }).notNull(),
+  tokensUsed: integer('tokensUsed').notNull(),
+  chatId: text('chatId'),
+  modelUsed: text('modelUsed'),
+});
 
 export const user = pgTable('User', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   email: varchar('email', { length: 64 }).notNull(),
   password: varchar('password', { length: 64 }),
+  role: varchar('role', { enum: ['user', 'admin'] })
+    .notNull()
+    .default('user'),
+  tokenLimit: integer('tokenLimit').default(10000),
 });
 
 export type User = InferSelectModel<typeof user>;
@@ -150,3 +207,28 @@ export const suggestion = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+export const customPrompt = pgTable('CustomPrompt', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  promptText: text('promptText').notNull(),
+  name: varchar('name', { length: 255 }),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type CustomPrompt = InferSelectModel<typeof customPrompt>;
+
+export const usageStat = pgTable('UsageStat', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  timestamp: timestamp('timestamp').notNull().defaultNow(),
+  tokensUsed: integer('tokensUsed').notNull(),
+  chatId: uuid('chatId').references(() => chat.id),
+  modelUsed: varchar('modelUsed', { length: 64 }),
+});
+
+export type UsageStat = InferSelectModel<typeof usageStat>;
