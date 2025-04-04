@@ -1,7 +1,8 @@
 {
   "name": "poiesis-pete",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "private": true,
+  "description": "Poiesis Pete - An AI assistant powered by OpenAI",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -9,15 +9,68 @@ import {
   primaryKey,
   foreignKey,
   boolean,
+  pgEnum,
+  integer,
+  date,
 } from 'drizzle-orm/pg-core';
+
+// User role enum
+export const userRoleEnum = pgEnum('user_role', ['admin', 'user']);
 
 export const user = pgTable('User', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   email: varchar('email', { length: 64 }).notNull(),
   password: varchar('password', { length: 64 }),
+  role: userRoleEnum('role').default('user'),
 });
 
 export type User = InferSelectModel<typeof user>;
+
+// User token limits
+export const userLimits = pgTable('UserLimits', {
+  userId: uuid('userId')
+    .primaryKey()
+    .notNull()
+    .references(() => user.id),
+  maxTokensPerDay: integer('maxTokensPerDay').default(10000).notNull(),
+  maxConversations: integer('maxConversations').default(10).notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+});
+
+export type UserLimits = InferSelectModel<typeof userLimits>;
+
+// Token usage tracking
+export const tokenUsage = pgTable('TokenUsage', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  date: date('date').notNull(),
+  inputTokens: integer('inputTokens').default(0).notNull(),
+  outputTokens: integer('outputTokens').default(0).notNull(),
+  totalTokens: integer('totalTokens').default(0).notNull(),
+  modelId: varchar('modelId', { length: 64 }),
+  chatId: uuid('chatId').references(() => chat.id),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+});
+
+export type TokenUsage = InferSelectModel<typeof tokenUsage>;
+
+// Custom user prompts
+export const customPrompt = pgTable('CustomPrompt', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  name: varchar('name', { length: 128 }).notNull(),
+  content: text('content').notNull(),
+  description: text('description'),
+  systemPrompt: boolean('systemPrompt').default(false).notNull(),
+  createdAt: timestamp('createdAt').defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt').defaultNow().notNull(),
+});
+
+export type CustomPrompt = InferSelectModel<typeof customPrompt>;
 
 export const chat = pgTable('Chat', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),

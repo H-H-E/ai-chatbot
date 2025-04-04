@@ -1,4 +1,4 @@
-name: Sync with Upstream
+name: Sync with Upstream Repository
 
 on:
   # Run weekly on Monday at 3:00 AM
@@ -33,13 +33,23 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           commit-message: 'chore: sync with upstream repository'
-          title: 'Sync with upstream repository'
+          title: 'Sync with upstream repository (vercel/ai-chatbot)'
           body: |
             This PR syncs changes from the upstream repository (vercel/ai-chatbot).
             
-            **Please carefully review the changes before merging to ensure your customizations are preserved.**
+            ## 🚨 Important: Review Carefully Before Merging
             
-            This PR was automatically created by the sync-upstream GitHub Action workflow.
+            Please carefully review this PR before merging to prevent overwriting your Poiesis Pete customizations.
+            
+            ### Key Files to Check for Conflicts:
+            - `app/(chat)/api/chat/route.ts` (token tracking)
+            - `components/chat-header.tsx` (branding)
+            - `components/app-sidebar.tsx` (admin menu)
+            - `lib/db/schema.ts` (custom tables)
+            - Any admin dashboard components
+            
+            This automatic PR was created by the GitHub Actions workflow to maintain compatibility with upstream security fixes and improvements.
           branch: sync-upstream
           base: main
-          labels: automated,sync 
+          labels: automated,sync,upstream
+          delete-branch: true 

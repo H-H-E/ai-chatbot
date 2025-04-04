@@ -35,7 +35,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
               className="flex flex-row gap-3 items-center"
             >
               <span className="text-lg font-semibold px-2 hover:bg-muted rounded-md cursor-pointer">
-                Chatbot
+                Poiesis Pete
               </span>
             </Link>
             <Tooltip>
@@ -61,7 +61,21 @@ export function AppSidebar({ user }: { user: User | undefined }) {
       <SidebarContent>
         <SidebarHistory user={user} />
       </SidebarContent>
-      <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
+      <SidebarFooter>
+        {user && <SidebarUserNav user={user} />}
+        {user?.role === 'admin' && (
+          <Button
+            variant="ghost"
+            className="w-full justify-start"
+            onClick={() => {
+              router.push('/admin');
+              setOpenMobile(false);
+            }}
+          >
+            Admin Dashboard
+          </Button>
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }
