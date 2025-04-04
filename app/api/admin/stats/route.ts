@@ -27,8 +27,8 @@ export async function GET(req: Request) {
   try {
     // Build query conditions
     let conditions = and(
-      gte(tokenUsage.date, startDate),
-      lte(tokenUsage.date, endDate),
+      gte(tokenUsage.date, startDate.toISOString().split('T')[0]),
+      lte(tokenUsage.date, endDate.toISOString().split('T')[0]),
     );
 
     // Add user filter if provided

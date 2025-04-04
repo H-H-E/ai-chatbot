@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { tokenUsage } from '@/lib/db/schema';
 import { auth } from '@/app/(auth)/auth';
-import { CallbackHandlerMethods } from 'langchain/callbacks';
+import { sql } from 'drizzle-orm';
 
 // Interface to match Vercel AI SDK or LangChain usage format
 export interface TokenUsageData {
@@ -20,13 +20,14 @@ export async function recordTokenUsage(data: TokenUsageData) {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const dateString = today.toISOString().split('T')[0]; // Convert to YYYY-MM-DD format
 
     // Calculate total tokens if not provided
     const total = data.totalTokens ?? data.inputTokens + data.outputTokens;
 
     await db.insert(tokenUsage).values({
       userId: data.userId,
-      date: today,
+      date: dateString,
       inputTokens: data.inputTokens,
       outputTokens: data.outputTokens,
       totalTokens: total,
@@ -48,24 +49,22 @@ export async function hasExceededDailyLimit(userId: string): Promise<boolean> {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const dateString = today.toISOString().split('T')[0]; // Convert to YYYY-MM-DD format
 
-    // Get user's limit
-    const limits = await db.query.userLimits.findFirst({
-      where: (userLimits, { eq }) => eq(userLimits.userId, userId),
-    });
+    // Default limit - in a production app you would get this from a user settings table
+    const maxTokensPerDay = 10000;
 
-    // Default limit if not set
-    const maxTokensPerDay = limits?.maxTokensPerDay || 10000;
-
-    // Get today's usage
+    // Get today's usage with direct SQL query
     const usageResult = await db
       .select({
-        totalTokens: db.fn.sum(tokenUsage.totalTokens).as('totalTokens'),
+        totalTokens: sql<number>`sum(${tokenUsage.totalTokens})`.as(
+          'totalTokens',
+        ),
       })
       .from(tokenUsage)
-      .where((table) => {
-        return db.and(db.eq(table.userId, userId), db.eq(table.date, today));
-      });
+      .where(
+        sql`${tokenUsage.userId} = ${userId} AND ${tokenUsage.date} = ${dateString}`,
+      );
 
     const todayUsage = Number(usageResult[0]?.totalTokens || 0);
     return todayUsage >= maxTokensPerDay;
@@ -73,42 +72,6 @@ export async function hasExceededDailyLimit(userId: string): Promise<boolean> {
     console.error('Error checking token limits:', error);
     return false; // Default to not exceeded in case of error
   }
-}
-
-/**
- * Creates a LangChain callback handler for token tracking
- */
-export function createTokenTrackingHandler(): CallbackHandlerMethods {
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let modelName = '';
-
-  return {
-    async handleLLMStart(llm) {
-      modelName = llm.name || '';
-    },
-    async handleLLMEnd(output) {
-      if (output.llmOutput?.tokenUsage) {
-        const { tokenUsage: usage } = output.llmOutput;
-        inputTokens += usage.promptTokens || 0;
-        outputTokens += usage.completionTokens || 0;
-      }
-
-      try {
-        const session = await auth();
-        if (!session?.user?.id) return;
-
-        await recordTokenUsage({
-          userId: session.user.id,
-          modelId: modelName,
-          inputTokens,
-          outputTokens,
-        });
-      } catch (error) {
-        console.error('Error in token tracking callback:', error);
-      }
-    },
-  };
 }
 
 /**
