@@ -1,0 +1,45 @@
+name: Sync with Upstream
+
+on:
+  # Run weekly on Monday at 3:00 AM
+  schedule:
+    - cron: '0 3 * * 1'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync with Upstream
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/vercel/ai-chatbot.git
+          git fetch upstream
+      
+      - name: Create temporary branch for upstream changes
+        run: git checkout -b temp-upstream-sync upstream/main
+      
+      - name: Create sync pull request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync with upstream repository'
+          title: 'Sync with upstream repository'
+          body: |
+            This PR syncs changes from the upstream repository (vercel/ai-chatbot).
+            
+            **Please carefully review the changes before merging to ensure your customizations are preserved.**
+            
+            This PR was automatically created by the sync-upstream GitHub Action workflow.
+          branch: sync-upstream
+          base: main
+          labels: automated,sync 
