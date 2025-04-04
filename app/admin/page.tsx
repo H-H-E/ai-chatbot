@@ -1,8 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { redirect } from 'next/navigation';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useMemo,
+  useEffect,
+  useState,
+} from 'react';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
+import useSWR from 'swr';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -11,19 +19,30 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  TooltipProps,
-} from 'recharts';
 
-// Use simple divs for tabs since we don't have the UI components
+// Dynamic imports for heavy components
+const DailyTokenUsageChart = lazy(
+  () => import('./components/DailyTokenUsageChart'),
+);
+
+// Simple fallback loading components
+const ChartSkeleton = () => (
+  <div className="w-full h-[300px] bg-gray-100 animate-pulse rounded-md" />
+);
+
+const CardSkeleton = () => (
+  <Card>
+    <CardHeader>
+      <div className="h-6 w-32 bg-gray-200 animate-pulse rounded mb-2" />
+      <div className="h-4 w-48 bg-gray-100 animate-pulse rounded" />
+    </CardHeader>
+    <CardContent>
+      <div className="h-8 w-20 bg-gray-200 animate-pulse rounded" />
+    </CardContent>
+  </Card>
+);
+
+// Memoized UI components for better performance
 const TabsList = ({ children }: { children: React.ReactNode }) => (
   <div className="flex space-x-2 mb-4 border-b">{children}</div>
 );
@@ -38,6 +57,7 @@ const TabsTrigger = ({
   onClick: () => void;
 }) => (
   <button
+    type="button"
     className={`px-4 py-2 ${active ? 'border-b-2 border-blue-500' : ''}`}
     onClick={onClick}
   >
@@ -45,17 +65,18 @@ const TabsTrigger = ({
   </button>
 );
 
+// Memoized to prevent unnecessary re-renders
 const TabsContent = ({
   value,
   activeTab,
   children,
-}: {
-  value: string;
-  activeTab: string;
-  children: React.ReactNode;
-}) => (
-  <div className={value === activeTab ? 'block' : 'hidden'}>{children}</div>
-);
+}: { value: string; activeTab: string; children: React.ReactNode }) => {
+  const isActive = value === activeTab;
+  return useMemo(
+    () => <div className={isActive ? 'block' : 'hidden'}>{children}</div>,
+    [isActive, children],
+  );
+};
 
 type StatsData = {
   dailyStats?: Array<{
@@ -69,48 +90,78 @@ type StatsData = {
   topUsers?: Array<any>;
 };
 
+// API data fetcher with caching
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch data');
+  return res.json();
+};
+
 export default function AdminDashboard() {
+  const router = useRouter();
   const { data: session, status } = useSession();
-  const [stats, setStats] = useState<StatsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
 
+  // Use SWR for data fetching with caching, revalidation, and error handling
+  const { data, error, isLoading, mutate } = useSWR<{
+    success: boolean;
+    data: StatsData;
+  }>(
+    status === 'authenticated' && session?.user?.role === 'admin'
+      ? '/api/admin/stats'
+      : null,
+    fetcher,
+    {
+      revalidateOnFocus: false, // Only revalidate explicitly or on interval
+      refreshInterval: 60000, // Refresh every minute
+      dedupingInterval: 10000, // Dedupe similar requests within 10s
+    },
+  );
+
+  // Optimize tab switching
+  const setActiveTabCallback = useCallback((tab: string) => {
+    setActiveTab(tab);
+  }, []);
+
+  // Redirect if not authenticated or not admin
   useEffect(() => {
-    // Check if user is authenticated and is admin
-    if (status === 'authenticated') {
-      if (session?.user?.role !== 'admin') {
-        redirect('/');
-      } else {
-        fetchStats();
-      }
-    } else if (status === 'unauthenticated') {
-      redirect('/login');
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    } else if (status === 'authenticated' && session?.user?.role !== 'admin') {
+      router.push('/');
     }
-  }, [status, session]);
+  }, [status, session, router]);
 
-  const fetchStats = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/admin/stats');
-      if (!response.ok) {
-        throw new Error('Failed to fetch stats');
-      }
-      const data = await response.json();
-      setStats(data.data);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Memoize stats data to avoid unnecessary recalculations
+  const stats = useMemo(() => data?.data || null, [data]);
 
-  if (status === 'loading' || loading) {
-    return <div className="container p-8">Loading admin dashboard...</div>;
+  if (status === 'loading' || (!stats && isLoading)) {
+    return (
+      <div className="container p-4 md:p-8">
+        <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+        <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+        <div className="mt-6">
+          <ChartSkeleton />
+        </div>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="container p-8 text-red-500">Error: {error}</div>;
+    return (
+      <div className="container p-8">
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded">
+          <p className="text-red-700">Error loading dashboard data</p>
+          <Button className="mt-2" onClick={() => mutate()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -122,22 +173,22 @@ export default function AdminDashboard() {
           <TabsTrigger
             value="Overview"
             active={activeTab === 'overview'}
-            onClick={() => setActiveTab('overview')}
+            onClick={() => setActiveTabCallback('overview')}
           />
           <TabsTrigger
             value="Users"
             active={activeTab === 'users'}
-            onClick={() => setActiveTab('users')}
+            onClick={() => setActiveTabCallback('users')}
           />
           <TabsTrigger
             value="Prompts"
             active={activeTab === 'prompts'}
-            onClick={() => setActiveTab('prompts')}
+            onClick={() => setActiveTabCallback('prompts')}
           />
           <TabsTrigger
             value="Settings"
             active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
+            onClick={() => setActiveTabCallback('settings')}
           />
         </TabsList>
 
@@ -193,33 +244,9 @@ export default function AdminDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={stats.dailyStats}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(date: string) =>
-                        new Date(date).toLocaleDateString()
-                      }
-                    />
-                    <YAxis />
-                    <Tooltip
-                      labelFormatter={(date: string) =>
-                        new Date(date).toLocaleDateString()
-                      }
-                      formatter={(value: number) => [
-                        value.toLocaleString(),
-                        'Tokens',
-                      ]}
-                    />
-                    <Legend />
-                    <Bar
-                      dataKey="totalTokens"
-                      fill="#8884d8"
-                      name="Total Tokens"
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<ChartSkeleton />}>
+                  <DailyTokenUsageChart data={stats.dailyStats} />
+                </Suspense>
               </CardContent>
             </Card>
           )}
