@@ -10,6 +10,12 @@ interface ExtendedSession extends Session {
   user: User;
 }
 
+declare module 'next-auth' {
+  interface User {
+    role?: 'admin' | 'user';
+  }
+}
+
 export const {
   handlers: { GET, POST },
   auth,

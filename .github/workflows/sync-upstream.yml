@@ -1,0 +1,55 @@
+name: Sync with Upstream Repository
+
+on:
+  # Run weekly on Monday at 3:00 AM
+  schedule:
+    - cron: '0 3 * * 1'
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync with Upstream
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/vercel/ai-chatbot.git
+          git fetch upstream
+      
+      - name: Create temporary branch for upstream changes
+        run: git checkout -b temp-upstream-sync upstream/main
+      
+      - name: Create sync pull request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: sync with upstream repository'
+          title: 'Sync with upstream repository (vercel/ai-chatbot)'
+          body: |
+            This PR syncs changes from the upstream repository (vercel/ai-chatbot).
+            
+            ## 🚨 Important: Review Carefully Before Merging
+            
+            Please carefully review this PR before merging to prevent overwriting your Poiesis Pete customizations.
+            
+            ### Key Files to Check for Conflicts:
+            - `app/(chat)/api/chat/route.ts` (token tracking)
+            - `components/chat-header.tsx` (branding)
+            - `components/app-sidebar.tsx` (admin menu)
+            - `lib/db/schema.ts` (custom tables)
+            - Any admin dashboard components
+            
+            This automatic PR was created by the GitHub Actions workflow to maintain compatibility with upstream security fixes and improvements.
+          branch: sync-upstream
+          base: main
+          labels: automated,sync,upstream
+          delete-branch: true 

@@ -25,6 +25,8 @@ import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
+import { hasExceededDailyLimit, recordTokenUsage } from '@/lib/token-usage';
+import { CallbackManager } from 'langchain/callbacks';
 
 export const maxDuration = 60;
 
@@ -44,6 +46,17 @@ export async function POST(request: Request) {
 
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
+    }
+
+    // Check if user has exceeded their daily token limit
+    const hasExceeded = await hasExceededDailyLimit(session.user.id);
+    if (hasExceeded) {
+      return new Response(
+        JSON.stringify({
+          error: 'Daily token limit exceeded. Please try again tomorrow.',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
     }
 
     const userMessage = getMostRecentUserMessage(messages);
@@ -77,6 +90,22 @@ export async function POST(request: Request) {
           createdAt: new Date(),
         },
       ],
+    });
+
+    // Setup token tracking
+    let inputTokens = 0;
+    let outputTokens = 0;
+
+    // Create a callback manager for token tracking
+    const callbackManager = CallbackManager.fromHandlers({
+      async handleLLMEnd(output) {
+        // Extract token usage from the output
+        if (output.llmOutput?.tokenUsage) {
+          const { tokenUsage } = output.llmOutput;
+          inputTokens += tokenUsage.promptTokens || 0;
+          outputTokens += tokenUsage.completionTokens || 0;
+        }
+      },
     });
 
     return createDataStreamResponse({
@@ -137,8 +166,27 @@ export async function POST(request: Request) {
                     },
                   ],
                 });
-              } catch (_) {
-                console.error('Failed to save chat');
+
+                // Record token usage after successful message
+                if (inputTokens > 0 || outputTokens > 0 || response.usage) {
+                  await recordTokenUsage({
+                    userId: session.user.id,
+                    chatId: id,
+                    modelId: selectedChatModel,
+                    // Use response.usage if available, otherwise use counted tokens
+                    inputTokens: response.usage?.prompt_tokens || inputTokens,
+                    outputTokens:
+                      response.usage?.completion_tokens || outputTokens,
+                    totalTokens:
+                      response.usage?.total_tokens ||
+                      inputTokens + outputTokens,
+                  });
+                }
+              } catch (error) {
+                console.error(
+                  'Failed to save chat or record token usage:',
+                  error,
+                );
               }
             }
           },
@@ -146,6 +194,7 @@ export async function POST(request: Request) {
             isEnabled: isProductionEnvironment,
             functionId: 'stream-text',
           },
+          callbacks: callbackManager,
         });
 
         result.consumeStream();
