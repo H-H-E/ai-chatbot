@@ -26,7 +26,6 @@ import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { hasExceededDailyLimit, recordTokenUsage } from '@/lib/token-usage';
-import { CallbackManager } from 'langchain/callbacks';
 
 export const maxDuration = 60;
 
@@ -92,22 +91,6 @@ export async function POST(request: Request) {
       ],
     });
 
-    // Setup token tracking
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    // Create a callback manager for token tracking
-    const callbackManager = CallbackManager.fromHandlers({
-      async handleLLMEnd(output) {
-        // Extract token usage from the output
-        if (output.llmOutput?.tokenUsage) {
-          const { tokenUsage } = output.llmOutput;
-          inputTokens += tokenUsage.promptTokens || 0;
-          outputTokens += tokenUsage.completionTokens || 0;
-        }
-      },
-    });
-
     return createDataStreamResponse({
       execute: (dataStream) => {
         const result = streamText({
@@ -135,12 +118,15 @@ export async function POST(request: Request) {
               dataStream,
             }),
           },
-          onFinish: async ({ response }) => {
+          onFinish: async (event) => {
             if (session.user?.id) {
               try {
+                // Use type assertion to work with Vercel AI SDK types
+                const response = event.response as any;
+
                 const assistantId = getTrailingMessageId({
                   messages: response.messages.filter(
-                    (message) => message.role === 'assistant',
+                    (message: any) => message.role === 'assistant',
                   ),
                 });
 
@@ -168,18 +154,14 @@ export async function POST(request: Request) {
                 });
 
                 // Record token usage after successful message
-                if (inputTokens > 0 || outputTokens > 0 || response.usage) {
+                if (response.usage) {
                   await recordTokenUsage({
                     userId: session.user.id,
                     chatId: id,
                     modelId: selectedChatModel,
-                    // Use response.usage if available, otherwise use counted tokens
-                    inputTokens: response.usage?.prompt_tokens || inputTokens,
-                    outputTokens:
-                      response.usage?.completion_tokens || outputTokens,
-                    totalTokens:
-                      response.usage?.total_tokens ||
-                      inputTokens + outputTokens,
+                    inputTokens: response.usage.prompt_tokens || 0,
+                    outputTokens: response.usage.completion_tokens || 0,
+                    totalTokens: response.usage.total_tokens || 0,
                   });
                 }
               } catch (error) {
@@ -194,7 +176,6 @@ export async function POST(request: Request) {
             isEnabled: isProductionEnvironment,
             functionId: 'stream-text',
           },
-          callbacks: callbackManager,
         });
 
         result.consumeStream();
