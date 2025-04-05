@@ -26,6 +26,8 @@ import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import { hasExceededDailyLimit, recordTokenUsage } from '@/lib/token-usage';
+import { countTokensWithLangchain } from '@/lib/langchain-token-usage';
+import { limitByIp, limitByUser } from '@/lib/rate-limit';
 
 export const maxDuration = 60;
 
@@ -45,6 +47,36 @@ export async function POST(request: Request) {
 
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
+    }
+
+    // Apply IP-based rate limiting
+    const isIpLimited = await limitByIp(request, {
+      windowMs: 60 * 1000, // 1 minute
+      maxRequests: 30, // 30 requests per minute
+    });
+
+    if (isIpLimited) {
+      return new Response(
+        JSON.stringify({
+          error: 'Rate limit exceeded. Please try again later.',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Apply user-based rate limiting
+    const isUserLimited = await limitByUser(session.user.id, {
+      windowMs: 60 * 1000, // 1 minute
+      maxRequests: 20, // 20 requests per minute
+    });
+
+    if (isUserLimited) {
+      return new Response(
+        JSON.stringify({
+          error: 'User rate limit exceeded. Please try again after a minute.',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
     }
 
     // Check if user has exceeded their daily token limit
@@ -91,11 +123,29 @@ export async function POST(request: Request) {
       ],
     });
 
+    // Calculate input tokens using Langchain before making the API call
+    const systemPromptText = systemPrompt({ selectedChatModel });
+    const tokenEstimate = await countTokensWithLangchain(
+      messages,
+      selectedChatModel,
+      systemPromptText,
+    );
+
+    // Pre-record input tokens immediately
+    await recordTokenUsage({
+      userId: session.user.id,
+      chatId: id,
+      modelId: selectedChatModel,
+      inputTokens: tokenEstimate.inputTokens,
+      outputTokens: 0, // Will be updated after completion
+      totalTokens: tokenEstimate.inputTokens,
+    });
+
     return createDataStreamResponse({
       execute: (dataStream) => {
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel }),
+          system: systemPromptText,
           messages,
           maxSteps: 5,
           experimental_activeTools:
@@ -117,6 +167,10 @@ export async function POST(request: Request) {
               session,
               dataStream,
             }),
+          },
+          // Include token usage in streaming mode
+          stream_options: {
+            include_usage: true,
           },
           onFinish: async (event) => {
             if (session.user?.id) {
@@ -153,15 +207,31 @@ export async function POST(request: Request) {
                   ],
                 });
 
-                // Record token usage after successful message
+                // Record actual token usage after successful message
+                // If AI SDK provides usage data, use that for output tokens
                 if (response.usage) {
+                  // Update with actual output tokens
                   await recordTokenUsage({
                     userId: session.user.id,
                     chatId: id,
                     modelId: selectedChatModel,
-                    inputTokens: response.usage.prompt_tokens || 0,
-                    outputTokens: response.usage.completion_tokens || 0,
-                    totalTokens: response.usage.total_tokens || 0,
+                    inputTokens: 0, // Already recorded earlier
+                    outputTokens:
+                      response.usage.completion_tokens ||
+                      tokenEstimate.estimatedOutputTokens,
+                    totalTokens:
+                      response.usage.completion_tokens ||
+                      tokenEstimate.estimatedOutputTokens,
+                  });
+                } else {
+                  // Use our estimated output tokens if no usage data is provided
+                  await recordTokenUsage({
+                    userId: session.user.id,
+                    chatId: id,
+                    modelId: selectedChatModel,
+                    inputTokens: 0, // Already recorded earlier
+                    outputTokens: tokenEstimate.estimatedOutputTokens,
+                    totalTokens: tokenEstimate.estimatedOutputTokens,
                   });
                 }
               } catch (error) {
