@@ -1,6 +1,6 @@
 'use server';
 
-import { generateText, Message } from 'ai';
+import { generateText, type Message } from 'ai';
 import { cookies } from 'next/headers';
 
 import {
@@ -8,8 +8,9 @@ import {
   getMessageById,
   updateChatVisiblityById,
 } from '@/lib/db/queries';
-import { VisibilityType } from '@/components/visibility-selector';
+import type { VisibilityType } from '@/components/visibility-selector';
 import { myProvider } from '@/lib/ai/providers';
+import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
@@ -21,17 +22,22 @@ export async function generateTitleFromUserMessage({
 }: {
   message: Message;
 }) {
-  const { text: title } = await generateText({
-    model: myProvider.languageModel('title-model'),
-    system: `\n
-    - you will generate a short title based on the first message a user begins a conversation with
-    - ensure it is not more than 80 characters long
-    - the title should be a summary of the user's message
-    - do not use quotes or colons`,
-    prompt: JSON.stringify(message),
-  });
+  try {
+    const { text: title } = await generateText({
+      model: myProvider.languageModel(DEFAULT_CHAT_MODEL),
+      system: `\n
+      - you will generate a short title based on the first message a user begins a conversation with
+      - ensure it is not more than 80 characters long
+      - the title should be a summary of the user's message
+      - do not use quotes or colons`,
+      prompt: JSON.stringify(message),
+    });
 
-  return title;
+    return title;
+  } catch (error) {
+    console.error('Error generating title:', error);
+    return 'New Chat'; // Fallback title if generation fails
+  }
 }
 
 export async function deleteTrailingMessages({ id }: { id: string }) {
