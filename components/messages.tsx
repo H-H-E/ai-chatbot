@@ -2,7 +2,7 @@ import type { UIMessage } from 'ai';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { useScrollToBottom } from './use-scroll-to-bottom';
 import { Greeting } from './greeting';
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import type { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
@@ -29,6 +29,28 @@ function PureMessages({
 }: MessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
+  const [showThinking, setShowThinking] = useState(false);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+
+    if (
+      status === 'submitted' &&
+      messages.length > 0 &&
+      messages[messages.length - 1].role === 'user'
+    ) {
+      // Only show the thinking message after 3 seconds of waiting - emergency fallback
+      timer = setTimeout(() => {
+        setShowThinking(true);
+      }, 3000);
+    } else {
+      setShowThinking(false);
+    }
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [status, messages]);
 
   return (
     <div
@@ -54,9 +76,7 @@ function PureMessages({
         />
       ))}
 
-      {status === 'submitted' &&
-        messages.length > 0 &&
-        messages[messages.length - 1].role === 'user' && <ThinkingMessage />}
+      {showThinking && <ThinkingMessage />}
 
       <div
         ref={messagesEndRef}

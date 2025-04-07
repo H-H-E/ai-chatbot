@@ -45,7 +45,6 @@ export function Chat({
     id,
     body: { id, selectedChatModel: selectedChatModel },
     initialMessages,
-    experimental_throttle: 100,
     sendExtraMessageFields: true,
     generateId: generateUUID,
     onFinish: () => {
