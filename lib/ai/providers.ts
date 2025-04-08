@@ -21,9 +21,9 @@ export const myProvider = isTestEnvironment
       languageModels: {
         'chat-model': groq('meta-llama/llama-4-scout-17b-16e-instruct'),
         'chat-model-reasoning': groq(
-          'meta-llama/llama-4-scout-17b-16e-instruct',
+          'meta-llama/llama-4-maverick-17b-128e-instruct',
         ),
         'title-model': groq('meta-llama/llama-4-scout-17b-16e-instruct'),
-        'artifact-model': groq('meta-llama/llama-4-scout-17b-16e-instruct'),
+        'artifact-model': groq('meta-llama/llama-4-maverick-17b-128e-instruct'),
       },
     });

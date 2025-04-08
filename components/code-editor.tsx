@@ -22,7 +22,14 @@ function PureCodeEditor({ content, onSaveContent, status }: EditorProps) {
   const editorRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
-    if (containerRef.current && !editorRef.current) {
+    if (containerRef.current) {
+      // Destroy existing editor if it exists
+      if (editorRef.current) {
+        editorRef.current.destroy();
+        editorRef.current = null;
+      }
+
+      // Create new editor with current content
       const startState = EditorState.create({
         doc: content,
         extensions: [basicSetup, python(), oneDark],
@@ -40,9 +47,7 @@ function PureCodeEditor({ content, onSaveContent, status }: EditorProps) {
         editorRef.current = null;
       }
     };
-    // NOTE: we only want to run this effect once
-    // eslint-disable-next-line
-  }, []);
+  }, [content]); // Reinitialize when content changes
 
   useEffect(() => {
     if (editorRef.current) {
