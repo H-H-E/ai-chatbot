@@ -8,6 +8,20 @@ const components: Partial<Components> = {
   // @ts-expect-error
   code: CodeBlock,
   pre: ({ children }) => <>{children}</>,
+  p: ({ children, ...props }) => {
+    // Check if the paragraph contains a code block
+    const hasCodeBlock = React.Children.toArray(children).some(
+      (child) => React.isValidElement(child) && child.type === 'pre',
+    );
+
+    // If it contains a code block, render without p tag
+    if (hasCodeBlock) {
+      return <>{children}</>;
+    }
+
+    // Otherwise render normally
+    return <p {...props}>{children}</p>;
+  },
   ol: ({ node, children, ...props }) => {
     return (
       <ol className="list-decimal list-outside ml-4" {...props}>
